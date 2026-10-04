@@ -10,6 +10,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.ChunkStatus;
+import net.minecraft.world.chunk.WorldChunk;
 import org.joml.Matrix4fStack;
 import org.joml.Quaternionf;
 
@@ -50,8 +51,8 @@ public class ChestEsp extends Module {
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
                 Chunk chunk = world.getChunk(ccx + dx, ccz + dz, ChunkStatus.FULL, false);
-                if (chunk == null) continue;
-                for (BlockEntity be : chunk.getBlockEntities().values()) {
+                   if (!(chunk instanceof WorldChunk worldChunk)) continue;
+   for (BlockEntity be : worldChunk.getBlockEntities().values()) {
                     int[] rgb = colorFor(be);
                     if (rgb == null) continue;
                     BlockPos p = be.getPos();
