@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "cleanclient",
+  "version": "${version}",
+  "name": "CleanClient",
+  "description": "Chest ESP, Freecam and a clean UI.",
+  "environment": "client",
+  "entrypoints": { "client": ["com.cleanclient.CleanClient"] },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.4",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
