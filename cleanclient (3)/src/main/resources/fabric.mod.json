@@ -3,12 +3,13 @@
   "id": "cleanclient",
   "version": "${version}",
   "name": "CleanClient",
-  "description": "Chest ESP, Freecam and a clean UI.",
+  "description": "Chest ESP, Freecam, Stash Finder and a clean customizable UI.",
   "environment": "client",
   "entrypoints": { "client": ["com.cleanclient.CleanClient"] },
+  "mixins": ["cleanclient.mixins.json"],
   "depends": {
-    "fabricloader": ">=0.16.0",
-    "minecraft": "~1.21.4",
+    "fabricloader": ">=0.18.1",
+    "minecraft": "~1.21.11",
     "java": ">=21",
     "fabric-api": "*"
   }

@@ -2,41 +2,56 @@ package com.cleanclient;
 
 import com.cleanclient.gui.ClickGuiScreen;
 import com.cleanclient.gui.Hud;
+import com.cleanclient.gui.Sidebar;
 import com.cleanclient.module.ModuleManager;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
-import org.lwjgl.glfw.GLFW;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.resources.Identifier;
 
 public class CleanClient implements ClientModInitializer {
-    public static final String CATEGORY = "key.categories.cleanclient";
+    public static final String MOD_ID = "cleanclient";
 
-    public static KeyBinding openGui;
-    public static KeyBinding toggleFreecam;
+    public static KeyMapping openGui;
+    public static KeyMapping toggleFreecam;
 
     @Override
     public void onInitializeClient() {
+        Config.load();
         ModuleManager.init();
 
-        openGui = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.cleanclient.gui", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_SHIFT, CATEGORY));
-        toggleFreecam = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.cleanclient.freecam", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_H, CATEGORY));
+        KeyMapping.Category category = KeyMapping.Category.register(
+                Identifier.fromNamespaceAndPath(MOD_ID, "main"));
+
+        openGui = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+                "key.cleanclient.gui", InputConstants.Type.KEYSYM, InputConstants.KEY_RSHIFT, category));
+        toggleFreecam = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+                "key.cleanclient.freecam", InputConstants.Type.KEYSYM, InputConstants.KEY_H, category));
 
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
-            while (openGui.wasPressed()) mc.setScreen(new ClickGuiScreen());
-            while (toggleFreecam.wasPressed()) ModuleManager.FREECAM.toggle();
+            while (openGui.consumeClick()) mc.setScreen(new ClickGuiScreen());
+            while (toggleFreecam.consumeClick()) ModuleManager.FREECAM.toggle();
             ModuleManager.tick(mc);
         });
 
-        WorldRenderEvents.LAST.register(ModuleManager.CHEST_ESP::render);
-        HudRenderCallback.EVENT.register(Hud::render);
+        WorldRenderEvents.BEFORE_TRANSLUCENT.register(ModuleManager::renderWorld);
+
+        HudElementRegistry.attachElementBefore(
+                VanillaHudElements.CHAT,
+                Identifier.fromNamespaceAndPath(MOD_ID, "hud"),
+                Hud::render);
+
+        // Replace the vanilla sidebar only when the custom one is switched on
+        HudElementRegistry.replaceElement(VanillaHudElements.SCOREBOARD, original -> (g, tracker) -> {
+            if (Sidebar.active()) Sidebar.render(g, tracker);
+            else original.render(g, tracker);
+        });
 
         // Never leave freecam on across worlds/servers
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
