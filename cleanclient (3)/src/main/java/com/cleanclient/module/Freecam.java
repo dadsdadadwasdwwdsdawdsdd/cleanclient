@@ -8,18 +8,22 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.player.RemotePlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 
 /**
  * Detaches the camera from the player. The real player is frozen (input replaced) while a
- * client-side camera entity flies. Movement and rotation are updated every frame (not every
- * tick) so the view is smooth. Mouse look is redirected here by EntityMixin, so your real
- * player never turns and no extra rotation is sent to the server.
+ * client-side camera entity flies. Movement and rotation update every frame so the view is smooth.
+ *
+ * - Mouse look is redirected to the camera by EntityMixin (hold the "aim player" key to turn your
+ *   real player instead).
+ * - GameRendererMixin makes block mining / interaction use the REAL player, not the camera.
  */
 public class Freecam extends Module {
     private RemotePlayer camera;
     private ClientInput savedInput;
     private LocalPlayer owner;
+    private Entity swapped;
     private float camYaw, camPitch;
     private boolean mixinSeen;
     private long lastNanos;
@@ -54,8 +58,9 @@ public class Freecam extends Module {
 
     @Override
     protected void onDisable() {
-        if (mc.player != null && mc.player == owner) {
-            if (savedInput != null) mc.player.input = savedInput;
+        swapped = null;
+        if (mc.player != null && mc.player == owner && savedInput != null) {
+            mc.player.input = savedInput;
         }
         if (mc.player != null) {
             mc.setCameraEntity(mc.player);
@@ -64,6 +69,24 @@ public class Freecam extends Module {
         camera = null;
         savedInput = null;
         owner = null;
+    }
+
+    public boolean isActive() { return camera != null; }
+
+    // --- used by GameRendererMixin: aim/mine with the real player, not the camera ---
+    public void beginPick() {
+        if (camera == null || mc.player == null) return;
+        if (mc.getCameraEntity() == camera) {
+            swapped = camera;
+            mc.setCameraEntity(mc.player);
+        }
+    }
+
+    public void endPick() {
+        if (swapped != null) {
+            mc.setCameraEntity(swapped);
+            swapped = null;
+        }
     }
 
     /** Called by EntityMixin on mouse movement (yaw delta, pitch delta in raw mouse units). */
@@ -80,6 +103,11 @@ public class Freecam extends Module {
         camera.setXRot(camPitch);
         camera.yRotO = camYaw;
         camera.xRotO = camPitch;
+        // living entities are viewed through their HEAD rotation, so set that too
+        camera.yHeadRot = camYaw;
+        camera.yHeadRotO = camYaw;
+        camera.yBodyRot = camYaw;
+        camera.yBodyRotO = camYaw;
     }
 
     private void syncPosition() {
@@ -102,12 +130,13 @@ public class Freecam extends Module {
     /** Per-frame movement; called from the world render event. */
     public void frameUpdate() {
         if (camera == null || mc.player == null) return;
+        if (swapped == null && mc.getCameraEntity() != camera) mc.setCameraEntity(camera);
 
         long now = System.nanoTime();
         double dt = Math.min((now - lastNanos) / 1.0e9, 0.1);
         lastNanos = now;
 
-        // Fallback if the mixin did not apply: follow the real player's rotation, every frame.
+        // Fallback if the mouse mixin did not apply: follow the real player's rotation, every frame.
         if (!mixinSeen) {
             camYaw = mc.player.getYRot();
             camPitch = mc.player.getXRot();
@@ -136,7 +165,6 @@ public class Freecam extends Module {
             }
         }
 
-        // previous == current, so there is no tick interpolation to cause shaking
         syncPosition();
     }
 }

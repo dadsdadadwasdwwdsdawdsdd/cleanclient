@@ -20,6 +20,7 @@ public class CleanClient implements ClientModInitializer {
 
     public static KeyMapping openGui;
     public static KeyMapping toggleFreecam;
+    public static KeyMapping aimPlayer;
 
     @Override
     public void onInitializeClient() {
@@ -33,11 +34,15 @@ public class CleanClient implements ClientModInitializer {
                 "key.cleanclient.gui", InputConstants.Type.KEYSYM, InputConstants.KEY_RSHIFT, category));
         toggleFreecam = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "key.cleanclient.freecam", InputConstants.Type.KEYSYM, InputConstants.KEY_H, category));
+        aimPlayer = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+                "key.cleanclient.freecam_aim", InputConstants.Type.KEYSYM, InputConstants.KEY_LALT, category));
+        Macros.register(category);
 
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
             while (openGui.consumeClick()) mc.setScreen(new ClickGuiScreen());
             while (toggleFreecam.consumeClick()) ModuleManager.FREECAM.toggle();
             ModuleManager.tick(mc);
+            Macros.tick(mc);
         });
 
         WorldRenderEvents.BEFORE_TRANSLUCENT.register(ModuleManager::renderWorld);

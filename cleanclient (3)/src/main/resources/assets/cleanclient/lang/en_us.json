@@ -1,5 +1,12 @@
 {
   "key.category.cleanclient.main": "CleanClient",
   "key.cleanclient.gui": "Open GUI",
-  "key.cleanclient.freecam": "Toggle Freecam"
+  "key.cleanclient.freecam": "Toggle Freecam",
+  "key.cleanclient.freecam_aim": "Freecam: aim real player (hold)",
+  "key.cleanclient.macro1": "Macro 1",
+  "key.cleanclient.macro2": "Macro 2",
+  "key.cleanclient.macro3": "Macro 3",
+  "key.cleanclient.macro4": "Macro 4",
+  "key.cleanclient.macro5": "Macro 5",
+  "key.cleanclient.macro6": "Macro 6"
 }

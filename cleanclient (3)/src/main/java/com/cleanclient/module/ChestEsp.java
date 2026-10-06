@@ -1,5 +1,6 @@
 package com.cleanclient.module;
 
+import com.cleanclient.Config;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.entity.BarrelBlockEntity;
@@ -16,7 +17,6 @@ import net.minecraft.world.phys.Vec3;
 /** Highlights storage blocks through walls (display only, reads data the server already sent). */
 public class ChestEsp extends Module {
     private static final int MAX_CHUNK_RADIUS = 8;
-    private static final float ALPHA = 0.38f;
 
     public ChestEsp() {
         super("Chest ESP", "Highlights storage blocks");
@@ -44,7 +44,7 @@ public class ChestEsp extends Module {
                     EspRenderer.box(
                             p.getX() + 0.04f, p.getY() + 0.0f, p.getZ() + 0.04f,
                             p.getX() + 0.96f, p.getY() + 0.92f, p.getZ() + 0.96f,
-                            rgb[0], rgb[1], rgb[2], ALPHA);
+                            rgb[0], rgb[1], rgb[2], Config.d.espAlpha);
                 }
             }
         }

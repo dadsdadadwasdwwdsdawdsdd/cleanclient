@@ -17,19 +17,17 @@ import net.minecraft.world.item.Items;
 import java.util.Comparator;
 import java.util.List;
 
-/** Watermark, info widgets, stash finder readout and the active-module list. */
+/** Logo, info widgets, stash finder readout and the active-module list. */
 public class Hud {
     public static void render(GuiGraphics g, DeltaTracker tracker) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.options.hideGui || mc.player == null) return;
         Font font = mc.font;
-        int accent = Theme.accent();
         int leftY = 6;
 
         if (Config.d.hudWatermark) {
-            g.drawString(font, "Clean", 6, leftY, accent);
-            g.drawString(font, "Client", 6 + font.width("Clean"), leftY, Theme.TEXT);
-            leftY += 14;
+            Logo.draw(g, 6, leftY, 2);
+            leftY += Logo.height(2) + 8;
         }
 
         if (Config.d.hudInfo) {
@@ -59,22 +57,44 @@ public class Hud {
 
             int bg = ((int) (Config.d.hudOpacity * 255) << 24) | 0x101014;
             int sw = g.guiWidth();
-            int y = Config.d.hudListRight ? 6 + Config.d.hudYOffset : leftY + Config.d.hudYOffset;
-            for (Module m : active) {
-                int w = font.width(m.getName());
-                if (Config.d.hudListRight) {
-                    int x = sw - w - 8;
-                    g.fill(x - 4, y - 2, sw, y + 10, bg);
-                    g.fill(sw - 2, y - 2, sw, y + 10, accent);
-                    g.drawString(font, m.getName(), x, y, Theme.TEXT);
-                } else {
-                    g.fill(0, y - 2, 6 + w + 6, y + 10, bg);
-                    g.fill(0, y - 2, 2, y + 10, accent);
-                    g.drawString(font, m.getName(), 8, y, Theme.TEXT);
-                }
+            boolean right = Config.d.hudListRight;
+            int y = (right ? 6 : leftY) + Config.d.hudYOffset;
+            for (int i = 0; i < active.size(); i++) {
+                entry(g, font, active.get(i).getName(), sw, y, right, Config.d.hudStyle, Theme.dynamic(i * 0.08f), bg);
                 y += 13;
             }
         }
+    }
+
+    /** One line of the module list in the chosen style (0 Bar, 1 Box, 2 Text, 3 Underline). */
+    private static void entry(GuiGraphics g, Font font, String name, int sw, int y, boolean right,
+                              int style, int col, int bg) {
+        int w = font.width(name);
+        int x0, x1, tx;
+        if (right) { x1 = sw; tx = sw - w - 8; x0 = tx - 4; }
+        else       { x0 = 0; tx = 8; x1 = tx + w + 4; }
+        int top = y - 2, bot = y + 10;
+
+        switch (style) {
+            case 1 -> {
+                g.fill(x0, top, x1, bot, bg);
+                g.fill(x0, top, x1, top + 1, col);
+                g.fill(x0, bot - 1, x1, bot, col);
+                g.fill(x0, top, x0 + 1, bot, col);
+                g.fill(x1 - 1, top, x1, bot, col);
+            }
+            case 2 -> { /* text only */ }
+            case 3 -> {
+                g.fill(x0, top, x1, bot, bg);
+                g.fill(x0, bot - 1, x1, bot, col);
+            }
+            default -> {
+                g.fill(x0, top, x1, bot, bg);
+                if (right) g.fill(x1 - 2, top, x1, bot, col);
+                else g.fill(x0, top, x0 + 2, bot, col);
+            }
+        }
+        g.drawString(font, name, tx, y, style == 2 ? col : Theme.TEXT);
     }
 
     private static int infoLine(GuiGraphics g, Font font, String label, String value, int y) {

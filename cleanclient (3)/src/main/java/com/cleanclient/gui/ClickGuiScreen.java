@@ -1,6 +1,8 @@
 package com.cleanclient.gui;
 
+import com.cleanclient.CleanClient;
 import com.cleanclient.Config;
+import com.cleanclient.Macros;
 import com.cleanclient.module.Module;
 import com.cleanclient.module.ModuleManager;
 import net.minecraft.client.gui.GuiGraphics;
@@ -11,39 +13,46 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.DoubleConsumer;
 import java.util.function.DoubleSupplier;
 import java.util.function.Supplier;
 
+/**
+ * Dropdown-style GUI: one draggable panel per category. Click a panel header to open/close it.
+ * Left-click a module to toggle it, right-click a module to open its settings.
+ */
 public class ClickGuiScreen extends Screen {
-    private static final int W = 270, HEADER_H = 24, TAB_H = 20, ROW_H = 22, SLIDER_H = 32, FOOTER_H = 20;
-    private static final String[] TABS = {"Visuals", "World", "Customize", "Sidebar"};
+    private static final int HEADER_H = 18, ROW_H = 22, SLIDER_H = 28, FIELD_H = 34, INFO_H = 14;
+    private static final int TOP = 42, GAP = 8;
 
     // remembered between openings
-    private static int px = 30, py = 30, tab = 0;
+    private static final Set<String> OPEN = new HashSet<>();
+    private static final Set<String> COLLAPSED = new HashSet<>();
+    private static final Map<String, int[]> POS = new HashMap<>();
 
-    private boolean dragging;
-    private int dragOffX, dragOffY, lastMx, lastMy;
+    private final List<Panel> panels = new ArrayList<>();
+    private final List<EditBox> boxes = new ArrayList<>();
+    private Panel dragPanel;
+    private int dragOffX, dragOffY, pressX, pressY;
+    private boolean dragMoved;
     private Row activeSlider;
-    private EditBox nameBox;
-    private final List<List<Row>> pages = new ArrayList<>();
 
     public ClickGuiScreen() {
         super(Component.literal("CleanClient"));
-        buildPages();
     }
 
     @Override
     protected void init() {
-        nameBox = new EditBox(font, 0, 0, 100, 14, Component.literal("Spoof name"));
-        nameBox.setMaxLength(16);
-        nameBox.setValue(Config.d.spoofName == null ? "" : Config.d.spoofName);
-        nameBox.setResponder(s -> Config.d.spoofName = s);
-        nameBox.visible = false;
-        addWidget(nameBox);
+        activeSlider = null;
+        dragPanel = null;
+        buildPanels();
     }
 
     @Override
@@ -51,72 +60,233 @@ public class ClickGuiScreen extends Screen {
         Config.save();
     }
 
-    // ------------------------------------------------------------ pages
+    // ================================================================ panels
 
-    private void buildPages() {
-        pages.add(List.of(
-                new ModuleRow(ModuleManager.CHEST_ESP, "Highlights chests, barrels, shulkers"),
-                new ModuleRow(ModuleManager.FREECAM, "Fly the camera, player stays put (H)"),
-                new SliderRow("Freecam speed", "Blocks per second (Ctrl = x2)", 4, 40,
-                        () -> Config.d.freecamSpeed, v -> Config.d.freecamSpeed = (float) v, "%.0f b/s")
-        ));
-        pages.add(List.of(
-                new ModuleRow(ModuleManager.STASH_FINDER, "Flags chunks with lots of storage"),
-                new SliderRow("Stash threshold", "Score needed to flag a chunk", 3, 30,
-                        () -> Config.d.stashThreshold, v -> Config.d.stashThreshold = (int) Math.round(v), "%.0f"),
-                new ModuleRow(ModuleManager.AUTO_LEAVE, "Disconnect below a chosen Y level"),
-                new SliderRow("Leave below Y", "Disconnect when you drop under this", -64, 64,
-                        () -> Config.d.autoLeaveY, v -> Config.d.autoLeaveY = (int) Math.round(v), "%.0f")
-        ));
-        pages.add(List.of(
-                new ToggleRow("Watermark", "Show the CleanClient logo",
-                        () -> Config.d.hudWatermark, v -> Config.d.hudWatermark = v),
-                new ToggleRow("Module list", "Show enabled modules",
-                        () -> Config.d.hudModuleList, v -> Config.d.hudModuleList = v),
-                new CycleRow("List side", "Left or right of the screen",
-                        () -> Config.d.hudListRight ? "Right" : "Left",
-                        () -> Config.d.hudListRight = !Config.d.hudListRight),
-                new ToggleRow("Info widgets", "XYZ, totems, crystals, ping",
-                        () -> Config.d.hudInfo, v -> Config.d.hudInfo = v),
-                new CycleRow("Accent color", "Click to cycle colors",
-                        Theme::accentName,
-                        () -> Config.d.accentIndex = (Config.d.accentIndex + 1) % Theme.ACCENTS.length),
-                new SliderRow("HUD opacity", "Background of the module list", 0.1, 1.0,
-                        () -> Config.d.hudOpacity, v -> Config.d.hudOpacity = (float) v, "%.2f"),
-                new SliderRow("HUD Y offset", "Move the module list up/down", -40, 100,
-                        () -> Config.d.hudYOffset, v -> Config.d.hudYOffset = (int) Math.round(v), "%.0f")
-        ));
-        pages.add(List.of(
-                new ToggleRow("Custom sidebar", "Use CleanClient's sidebar style",
-                        () -> Config.d.sidebarCustom, v -> Config.d.sidebarCustom = v),
-                new ToggleRow("Hide scores", "Hide the numbers on the sidebar",
-                        () -> Config.d.sidebarHideScores, v -> Config.d.sidebarHideScores = v),
-                new SliderRow("Sidebar Y offset", "Move the sidebar up/down", -150, 150,
-                        () -> Config.d.sidebarYOffset, v -> Config.d.sidebarYOffset = (int) Math.round(v), "%.0f"),
-                new ToggleRow("Name spoof", "Swap your name in the sidebar (visual only)",
-                        () -> Config.d.nameSpoofEnabled, v -> Config.d.nameSpoofEnabled = v),
-                new TextRow("Spoof name", "Name shown instead of yours")
-        ));
+    private class Panel {
+        final String title;
+        final int w;
+        final List<Row> rows;
+        int x, y;
+
+        Panel(String title, int w, List<Row> rows) {
+            this.title = title;
+            this.w = w;
+            this.rows = rows;
+        }
+
+        boolean collapsed() { return COLLAPSED.contains(title); }
+
+        int height() {
+            int h = HEADER_H;
+            if (!collapsed()) h += 2 + childrenHeight(rows) + 2;
+            return h;
+        }
     }
 
-    // ------------------------------------------------------------ rows
+    private EditBox box(String initial, int max, Consumer<String> onChange) {
+        EditBox b = new EditBox(font, 0, 0, 100, 14, Component.empty());
+        b.setMaxLength(max);
+        b.setValue(initial == null ? "" : initial);
+        b.setResponder(onChange);
+        b.visible = false;
+        addWidget(b);
+        boxes.add(b);
+        return b;
+    }
+
+    private void buildPanels() {
+        panels.clear();
+        boxes.clear();
+
+        // ---------------- Visuals
+        List<Row> visuals = List.of(
+                new ModuleRow(ModuleManager.CHEST_ESP, "Highlights chests, barrels, shulkers", List.of(
+                        new SliderRow("Opacity", "Box transparency", 0.1, 0.8,
+                                () -> Config.d.espAlpha, v -> Config.d.espAlpha = (float) v, "%.2f")
+                )),
+                new ModuleRow(ModuleManager.FREECAM, "Fly the camera, player stays put", List.of(
+                        new SliderRow("Speed", "Blocks per second (Ctrl = x2)", 4, 40,
+                                () -> Config.d.freecamSpeed, v -> Config.d.freecamSpeed = (float) v, "%.0f b/s"),
+                        new InfoRow(() -> "Hold " + CleanClient.aimPlayer.getTranslatedKeyMessage().getString() + ": aim player")
+                ))
+        );
+
+        // ---------------- World
+        List<Row> world = List.of(
+                new ModuleRow(ModuleManager.STASH_FINDER, "Flags chunks with lots of storage", List.of(
+                        new SliderRow("Threshold", "Score needed to flag a chunk", 3, 30,
+                                () -> Config.d.stashThreshold, v -> Config.d.stashThreshold = (int) Math.round(v), "%.0f"),
+                        new SliderRow("Scan radius", "Chunks to scan (only loaded ones exist)", 4, 32,
+                                () -> Config.d.stashRadius, v -> Config.d.stashRadius = (int) Math.round(v), "%.0f"),
+                        new ToggleRow("Remember", "Keep flagged chunks after they unload",
+                                () -> Config.d.stashRemember, v -> Config.d.stashRemember = v),
+                        new ButtonRow("Clear remembered", "Forget every saved suspect chunk",
+                                () -> ModuleManager.STASH_FINDER.clearAll())
+                )),
+                new ModuleRow(ModuleManager.AUTO_LEAVE, "Disconnect below a chosen Y level", List.of(
+                        new SliderRow("Leave below Y", "Disconnect when you drop under this", -64, 64,
+                                () -> Config.d.autoLeaveY, v -> Config.d.autoLeaveY = (int) Math.round(v), "%.0f")
+                ))
+        );
+
+        // ---------------- Macros
+        List<Row> macros = new ArrayList<>();
+        for (int i = 0; i < Config.MACRO_SLOTS; i++) {
+            final int slot = i;
+            EditBox b = box(Config.d.macros[slot], 120, s -> Config.d.macros[slot] = s);
+            macros.add(new FieldRow(() -> "Macro " + (slot + 1) + "  [" + Macros.keyName(slot) + "]",
+                    "Chat text or /command. Use ; to chain commands", b));
+        }
+        macros.add(new SliderRow("Delay", "Ticks between chained commands (20 = 1s)", 4, 40,
+                () -> Config.d.macroDelayTicks, v -> Config.d.macroDelayTicks = (int) Math.round(v), "%.0f"));
+        macros.add(new InfoRow(() -> "Bind keys: Options > Controls"));
+
+        // ---------------- HUD
+        List<Row> hud = List.of(
+                new GroupRow("Layout", "Logo, lists and widgets", List.of(
+                        new ToggleRow("Logo", "Show the CLEAN logo",
+                                () -> Config.d.hudWatermark, v -> Config.d.hudWatermark = v),
+                        new ToggleRow("Module list", "Show enabled modules",
+                                () -> Config.d.hudModuleList, v -> Config.d.hudModuleList = v),
+                        new CycleRow("List side", "Left or right of the screen",
+                                () -> Config.d.hudListRight ? "Right" : "Left",
+                                () -> Config.d.hudListRight = !Config.d.hudListRight),
+                        new CycleRow("Style", "Look of the module list",
+                                () -> Theme.STYLES[Math.floorMod(Config.d.hudStyle, Theme.STYLES.length)],
+                                () -> Config.d.hudStyle = (Config.d.hudStyle + 1) % Theme.STYLES.length),
+                        new ToggleRow("Info widgets", "XYZ, totems, crystals, ping",
+                                () -> Config.d.hudInfo, v -> Config.d.hudInfo = v),
+                        new SliderRow("Opacity", "Background of the module list", 0.1, 1.0,
+                                () -> Config.d.hudOpacity, v -> Config.d.hudOpacity = (float) v, "%.2f"),
+                        new SliderRow("Y offset", "Move the module list up/down", -40, 100,
+                                () -> Config.d.hudYOffset, v -> Config.d.hudYOffset = (int) Math.round(v), "%.0f")
+                )),
+                new GroupRow("Colors", "Colors and animated patterns", List.of(
+                        new CycleRow("Pattern", "Static, rainbow, gradient or pulse",
+                                () -> Theme.COLOR_MODES[Math.floorMod(Config.d.colorMode, Theme.COLOR_MODES.length)],
+                                () -> Config.d.colorMode = (Config.d.colorMode + 1) % Theme.COLOR_MODES.length),
+                        new CycleRow("Color", "Main accent color",
+                                () -> Theme.accentName(Config.d.accentIndex),
+                                () -> Config.d.accentIndex = (Config.d.accentIndex + 1) % Theme.accentCount()),
+                        new CycleRow("Color 2", "Second color (gradient pattern)",
+                                () -> Theme.accentName(Config.d.accent2Index),
+                                () -> Config.d.accent2Index = (Config.d.accent2Index + 1) % Theme.accentCount()),
+                        new SliderRow("Custom R", "Red of the Custom color", 0, 255,
+                                () -> Config.d.customR, v -> Config.d.customR = (int) Math.round(v), "%.0f"),
+                        new SliderRow("Custom G", "Green of the Custom color", 0, 255,
+                                () -> Config.d.customG, v -> Config.d.customG = (int) Math.round(v), "%.0f"),
+                        new SliderRow("Custom B", "Blue of the Custom color", 0, 255,
+                                () -> Config.d.customB, v -> Config.d.customB = (int) Math.round(v), "%.0f"),
+                        new SliderRow("Anim speed", "Speed of animated patterns", 0.2, 3.0,
+                                () -> Config.d.colorSpeed, v -> Config.d.colorSpeed = (float) v, "%.1f")
+                )),
+                new GroupRow("Sidebar", "Customize the scoreboard sidebar", List.of(
+                        new ToggleRow("Custom sidebar", "Use CleanClient's sidebar style",
+                                () -> Config.d.sidebarCustom, v -> Config.d.sidebarCustom = v),
+                        new ToggleRow("Hide scores", "Hide the numbers on the sidebar",
+                                () -> Config.d.sidebarHideScores, v -> Config.d.sidebarHideScores = v),
+                        new SliderRow("Y offset", "Move the sidebar up/down", -150, 150,
+                                () -> Config.d.sidebarYOffset, v -> Config.d.sidebarYOffset = (int) Math.round(v), "%.0f")
+                )),
+                new GroupRow("Name spoof", "Swap your name in the sidebar (visual only)", List.of(
+                        new ToggleRow("Enabled", "Replace your name in the sidebar text",
+                                () -> Config.d.nameSpoofEnabled, v -> Config.d.nameSpoofEnabled = v),
+                        new FieldRow(() -> "Name shown instead", "The name you will see",
+                                box(Config.d.spoofName, 16, s -> Config.d.spoofName = s))
+                ))
+        );
+
+        panels.add(new Panel("Visuals", 142, visuals));
+        panels.add(new Panel("World", 142, world));
+        panels.add(new Panel("Macros", 170, macros));
+        panels.add(new Panel("HUD", 142, hud));
+
+        int nextX = 12;
+        for (Panel p : panels) {
+            int[] saved = POS.get(p.title);
+            if (saved != null) {
+                p.x = saved[0];
+                p.y = saved[1];
+            } else {
+                p.x = nextX;
+                p.y = TOP;
+                POS.put(p.title, new int[]{p.x, p.y});
+            }
+            nextX += p.w + GAP;
+        }
+    }
+
+    // ================================================================ row helpers
+
+    private int childrenHeight(List<Row> rows) {
+        int h = 0;
+        for (Row r : rows) h += r.height();
+        return h;
+    }
+
+    private void drawChildren(GuiGraphics g, List<Row> rows, int x, int y, int w, int mx, int my) {
+        for (Row r : rows) {
+            r.draw(g, x, y, w, mx, my);
+            y += r.height();
+        }
+    }
+
+    private Row pressChildren(List<Row> rows, double mx, double my, int button, int x, int y, int w) {
+        for (Row r : rows) {
+            int h = r.height();
+            if (my >= y && my < y + h) return r.press(mx, my, button, x, y, w);
+            y += h;
+        }
+        return null;
+    }
+
+    private String describeChildren(List<Row> rows, double mx, double my, int x, int y, int w) {
+        for (Row r : rows) {
+            int h = r.height();
+            if (my >= y && my < y + h) return r.describe(mx, my, x, y, w);
+            y += h;
+        }
+        return null;
+    }
+
+    // ================================================================ rows
 
     private abstract class Row {
         final String label, desc;
         float hv;
 
-        Row(String label, String desc) { this.label = label; this.desc = desc; }
+        Row(String label, String desc) {
+            this.label = label;
+            this.desc = desc;
+        }
 
         int height() { return ROW_H; }
         boolean isSlider() { return false; }
-        abstract void draw(GuiGraphics g, int x, int y, int w, boolean over);
-        boolean press(double mx, int x, int w) { return false; }
-        void drag(double mx, int x, int w) {}
 
-        void hover(boolean over) { hv = Mth.lerp(0.25f, hv, over ? 1f : 0f); }
+        abstract void draw(GuiGraphics g, int x, int y, int w, int mx, int my);
+
+        /** Returns the row that consumed the click, or null if the click should fall through. */
+        Row press(double mx, double my, int button, int x, int y, int w) { return null; }
+
+        void drag(double mx) {}
+
+        String describe(double mx, double my, int x, int y, int w) { return desc; }
+
+        boolean hovered(int mx, int my, int x, int y, int w, int h) {
+            boolean over = mx >= x && mx < x + w && my >= y && my < y + h;
+            hv = Mth.lerp(0.25f, hv, over ? 1f : 0f);
+            return over;
+        }
 
         void background(GuiGraphics g, int x, int y, int w, int h) {
             g.fill(x + 2, y, x + w - 2, y + h, Theme.lerpColor(Theme.ROW, Theme.ROW_HOVER, hv));
+        }
+
+        void pill(GuiGraphics g, int x, int y, int w, float anim) {
+            int pw = 22, ph = 10, pxx = x + w - pw - 8, pyy = y + (ROW_H - ph) / 2;
+            g.fill(pxx, pyy, pxx + pw, pyy + ph, Theme.lerpColor(Theme.OFF_PILL, Theme.accent(), anim));
+            int knob = pxx + 1 + (int) ((pw - ph) * anim);
+            g.fill(knob, pyy + 1, knob + ph - 2, pyy + ph - 1, Theme.TEXT);
         }
     }
 
@@ -133,31 +303,21 @@ public class ClickGuiScreen extends Screen {
         }
 
         @Override
-        void draw(GuiGraphics g, int x, int y, int w, boolean over) {
-            hover(over);
+        void draw(GuiGraphics g, int x, int y, int w, int mx, int my) {
+            hovered(mx, my, x, y, w, ROW_H);
             float target = get.getAsBoolean() ? 1f : 0f;
             if (!init) { anim = target; init = true; }
             anim = Mth.lerp(0.25f, anim, target);
-
             background(g, x, y, w, ROW_H);
-            g.drawString(font, label, x + 10, y + 7, Theme.lerpColor(Theme.TEXT_DIM, Theme.TEXT, Math.max(anim, hv)));
-
-            int pw = 22, ph = 10, pxx = x + w - pw - 10, pyy = y + (ROW_H - ph) / 2;
-            g.fill(pxx, pyy, pxx + pw, pyy + ph, Theme.lerpColor(Theme.OFF_PILL, Theme.accent(), anim));
-            int knob = pxx + 1 + (int) ((pw - ph) * anim);
-            g.fill(knob, pyy + 1, knob + ph - 2, pyy + ph - 1, Theme.TEXT);
+            g.drawString(font, label, x + 8, y + 7, Theme.lerpColor(Theme.TEXT_DIM, Theme.TEXT, Math.max(anim, hv)));
+            pill(g, x, y, w, anim);
         }
 
         @Override
-        boolean press(double mx, int x, int w) {
+        Row press(double mx, double my, int button, int x, int y, int w) {
+            if (button != 0) return null;
             set.accept(!get.getAsBoolean());
-            return true;
-        }
-    }
-
-    private class ModuleRow extends ToggleRow {
-        ModuleRow(Module m, String desc) {
-            super(m.getName(), desc, m::isEnabled, m::setEnabled);
+            return this;
         }
     }
 
@@ -172,18 +332,19 @@ public class ClickGuiScreen extends Screen {
         }
 
         @Override
-        void draw(GuiGraphics g, int x, int y, int w, boolean over) {
-            hover(over);
+        void draw(GuiGraphics g, int x, int y, int w, int mx, int my) {
+            hovered(mx, my, x, y, w, ROW_H);
             background(g, x, y, w, ROW_H);
-            g.drawString(font, label, x + 10, y + 7, Theme.lerpColor(Theme.TEXT_DIM, Theme.TEXT, hv));
+            g.drawString(font, label, x + 8, y + 7, Theme.lerpColor(Theme.TEXT_DIM, Theme.TEXT, hv));
             String v = value.get();
-            g.drawString(font, v, x + w - 10 - font.width(v), y + 7, Theme.accent());
+            g.drawString(font, v, x + w - 8 - font.width(v), y + 7, Theme.accent());
         }
 
         @Override
-        boolean press(double mx, int x, int w) {
+        Row press(double mx, double my, int button, int x, int y, int w) {
+            if (button != 0) return null;
             next.run();
-            return true;
+            return this;
         }
     }
 
@@ -192,6 +353,7 @@ public class ClickGuiScreen extends Screen {
         final DoubleSupplier get;
         final DoubleConsumer set;
         final String fmt;
+        int barX, barW = 1;
 
         SliderRow(String label, String desc, double min, double max, DoubleSupplier get, DoubleConsumer set, String fmt) {
             super(label, desc);
@@ -206,145 +368,296 @@ public class ClickGuiScreen extends Screen {
         @Override boolean isSlider() { return true; }
 
         @Override
-        void draw(GuiGraphics g, int x, int y, int w, boolean over) {
-            hover(over);
+        void draw(GuiGraphics g, int x, int y, int w, int mx, int my) {
+            hovered(mx, my, x, y, w, SLIDER_H);
             background(g, x, y, w, SLIDER_H);
             double v = get.getAsDouble();
-            g.drawString(font, label, x + 10, y + 5, Theme.lerpColor(Theme.TEXT_DIM, Theme.TEXT, hv));
+            g.drawString(font, label, x + 8, y + 4, Theme.lerpColor(Theme.TEXT_DIM, Theme.TEXT, hv));
             String txt = String.format(fmt, v);
-            g.drawString(font, txt, x + w - 10 - font.width(txt), y + 5, Theme.TEXT_DIM);
+            g.drawString(font, txt, x + w - 8 - font.width(txt), y + 4, Theme.TEXT_DIM);
 
-            int bx = x + 10, bw = w - 20, by = y + 20;
+            barX = x + 8;
+            barW = Math.max(1, w - 16);
+            int by = y + 18;
             float t = (float) Mth.clamp((v - min) / (max - min), 0.0, 1.0);
-            int fillW = (int) (bw * t);
-            g.fill(bx, by, bx + bw, by + 3, Theme.OFF_PILL);
-            g.fill(bx, by, bx + fillW, by + 3, Theme.accent());
-            g.fill(bx + fillW - 2, by - 2, bx + fillW + 2, by + 5, Theme.TEXT);
+            int fillW = (int) (barW * t);
+            g.fill(barX, by, barX + barW, by + 3, Theme.OFF_PILL);
+            g.fill(barX, by, barX + fillW, by + 3, Theme.accent());
+            g.fill(barX + fillW - 2, by - 2, barX + fillW + 2, by + 5, Theme.TEXT);
         }
 
         @Override
-        boolean press(double mx, int x, int w) { setFrom(mx, x, w); return true; }
+        Row press(double mx, double my, int button, int x, int y, int w) {
+            if (button != 0) return null;
+            drag(mx);
+            return this;
+        }
 
         @Override
-        void drag(double mx, int x, int w) { setFrom(mx, x, w); }
-
-        private void setFrom(double mx, int x, int w) {
-            double t = Mth.clamp((mx - (x + 10)) / (double) (w - 20), 0.0, 1.0);
+        void drag(double mx) {
+            double t = Mth.clamp((mx - barX) / (double) barW, 0.0, 1.0);
             set.accept(min + t * (max - min));
         }
     }
 
-    private class TextRow extends Row {
-        TextRow(String label, String desc) { super(label, desc); }
+    private class ButtonRow extends Row {
+        final Runnable action;
+
+        ButtonRow(String label, String desc, Runnable action) {
+            super(label, desc);
+            this.action = action;
+        }
 
         @Override
-        void draw(GuiGraphics g, int x, int y, int w, boolean over) {
-            hover(over);
+        void draw(GuiGraphics g, int x, int y, int w, int mx, int my) {
+            hovered(mx, my, x, y, w, ROW_H);
             background(g, x, y, w, ROW_H);
-            g.drawString(font, label, x + 10, y + 7, Theme.lerpColor(Theme.TEXT_DIM, Theme.TEXT, hv));
-            nameBox.setX(x + w - 110);
-            nameBox.setY(y + 4);
-            nameBox.setWidth(100);
-            nameBox.visible = true;
-            nameBox.render(g, lastMx, lastMy, 0f);
+            g.drawString(font, label, x + (w - font.width(label)) / 2, y + 7, Theme.lerpColor(Theme.accent(), Theme.TEXT, hv));
         }
-        // press() returns false so the click reaches the text box
+
+        @Override
+        Row press(double mx, double my, int button, int x, int y, int w) {
+            if (button != 0) return null;
+            action.run();
+            return this;
+        }
     }
 
-    // ------------------------------------------------------------ rendering
+    private class InfoRow extends Row {
+        final Supplier<String> text;
+
+        InfoRow(Supplier<String> text) {
+            super("", "");
+            this.text = text;
+        }
+
+        @Override int height() { return INFO_H; }
+
+        @Override
+        void draw(GuiGraphics g, int x, int y, int w, int mx, int my) {
+            g.drawString(font, font.plainSubstrByWidth(text.get(), w - 12), x + 8, y + 3, Theme.TEXT_DIM);
+        }
+
+        @Override String describe(double mx, double my, int x, int y, int w) { return null; }
+    }
+
+    /** Label on top, text box underneath. */
+    private class FieldRow extends Row {
+        final Supplier<String> labelText;
+        final EditBox box;
+
+        FieldRow(Supplier<String> labelText, String desc, EditBox box) {
+            super("", desc);
+            this.labelText = labelText;
+            this.box = box;
+        }
+
+        @Override int height() { return FIELD_H; }
+
+        @Override
+        void draw(GuiGraphics g, int x, int y, int w, int mx, int my) {
+            hovered(mx, my, x, y, w, FIELD_H);
+            background(g, x, y, w, FIELD_H);
+            g.drawString(font, font.plainSubstrByWidth(labelText.get(), w - 12), x + 8, y + 3, Theme.TEXT_DIM);
+            box.setX(x + 6);
+            box.setY(y + 15);
+            box.setWidth(w - 12);
+            box.visible = true;
+            box.render(g, lastMouseX, lastMouseY, 0f);
+        }
+        // press() returns null so the click reaches the text box
+    }
+
+    /** A collapsible group of settings (no toggle of its own). */
+    private class GroupRow extends Row {
+        final List<Row> children;
+
+        GroupRow(String label, String desc, List<Row> children) {
+            super(label, desc);
+            this.children = children;
+        }
+
+        boolean open() { return OPEN.contains("g:" + label); }
+
+        @Override
+        int height() { return ROW_H + (open() ? childrenHeight(children) : 0); }
+
+        @Override
+        void draw(GuiGraphics g, int x, int y, int w, int mx, int my) {
+            hovered(mx, my, x, y, w, ROW_H);
+            background(g, x, y, w, ROW_H);
+            g.drawString(font, label, x + 8, y + 7, Theme.lerpColor(Theme.TEXT_DIM, Theme.TEXT, Math.max(hv, open() ? 1f : 0f)));
+            g.drawString(font, open() ? "v" : ">", x + w - 14, y + 7, Theme.TEXT_DIM);
+            if (open()) drawChildren(g, children, x + 6, y + ROW_H, w - 6, mx, my);
+        }
+
+        @Override
+        Row press(double mx, double my, int button, int x, int y, int w) {
+            if (my < y + ROW_H) {
+                if (button != 0) return null;
+                String k = "g:" + label;
+                if (!OPEN.remove(k)) OPEN.add(k);
+                return this;
+            }
+            return open() ? pressChildren(children, mx, my, button, x + 6, y + ROW_H, w - 6) : null;
+        }
+
+        @Override
+        String describe(double mx, double my, int x, int y, int w) {
+            if (my < y + ROW_H || !open()) return desc;
+            return describeChildren(children, mx, my, x + 6, y + ROW_H, w - 6);
+        }
+    }
+
+    /** A module: left-click toggles it, right-click opens its settings. */
+    private class ModuleRow extends Row {
+        final Module module;
+        final List<Row> children;
+        float anim;
+        boolean init;
+
+        ModuleRow(Module module, String desc, List<Row> children) {
+            super(module.getName(), desc);
+            this.module = module;
+            this.children = children;
+        }
+
+        String key() { return "m:" + module.getName(); }
+        boolean open() { return !children.isEmpty() && OPEN.contains(key()); }
+
+        @Override
+        int height() { return ROW_H + (open() ? childrenHeight(children) : 0); }
+
+        @Override
+        void draw(GuiGraphics g, int x, int y, int w, int mx, int my) {
+            hovered(mx, my, x, y, w, ROW_H);
+            float target = module.isEnabled() ? 1f : 0f;
+            if (!init) { anim = target; init = true; }
+            anim = Mth.lerp(0.25f, anim, target);
+
+            background(g, x, y, w, ROW_H);
+            g.drawString(font, label, x + 8, y + 7, Theme.lerpColor(Theme.TEXT_DIM, Theme.TEXT, Math.max(anim, hv)));
+            if (!children.isEmpty()) g.drawString(font, open() ? "v" : ">", x + w - 42, y + 7, Theme.TEXT_DIM);
+            pill(g, x, y, w, anim);
+
+            if (open()) drawChildren(g, children, x + 6, y + ROW_H, w - 6, mx, my);
+        }
+
+        @Override
+        Row press(double mx, double my, int button, int x, int y, int w) {
+            if (my < y + ROW_H) {
+                if (button == 0) {
+                    module.toggle();
+                    return this;
+                }
+                if (button == 1 && !children.isEmpty()) {
+                    if (!OPEN.remove(key())) OPEN.add(key());
+                    return this;
+                }
+                return null;
+            }
+            return open() ? pressChildren(children, mx, my, button, x + 6, y + ROW_H, w - 6) : null;
+        }
+
+        @Override
+        String describe(double mx, double my, int x, int y, int w) {
+            if (my < y + ROW_H || !open()) {
+                return children.isEmpty() ? desc : desc + "  (right-click: settings)";
+            }
+            return describeChildren(children, mx, my, x + 6, y + ROW_H, w - 6);
+        }
+    }
+
+    // ================================================================ rendering
+
+    private int lastMouseX, lastMouseY;
 
     @Override
     public void render(GuiGraphics g, int mx, int my, float delta) {
-        lastMx = mx;
-        lastMy = my;
-        nameBox.visible = false;
+        lastMouseX = mx;
+        lastMouseY = my;
+        for (EditBox b : boxes) b.visible = false;
 
         g.fill(0, 0, width, height, Theme.DIM_SCREEN);
-
-        List<Row> rows = pages.get(tab);
-        int bodyH = 0;
-        for (Row r : rows) bodyH += r.height();
-        int h = HEADER_H + TAB_H + 2 + bodyH + FOOTER_H;
-
-        px = Mth.clamp(px, 0, Math.max(0, width - W));
-        py = Mth.clamp(py, 0, Math.max(0, height - h));
+        Logo.draw(g, (width - Logo.width(3)) / 2, 8, 3);
 
         int accent = Theme.accent();
-        g.fill(px, py, px + W, py + h, Theme.BG);
-        g.fill(px, py, px + W, py + HEADER_H, Theme.HEADER);
-        g.fill(px, py + HEADER_H - 1, px + W, py + HEADER_H, accent);
-        g.drawString(font, "Clean", px + 8, py + 8, accent);
-        g.drawString(font, "Client", px + 8 + font.width("Clean"), py + 8, Theme.TEXT);
+        for (Panel p : panels) {
+            p.x = Mth.clamp(p.x, 0, Math.max(0, width - p.w));
+            p.y = Mth.clamp(p.y, 0, Math.max(0, height - HEADER_H));
+            int h = p.height();
 
-        // tabs
-        int ty = py + HEADER_H;
-        int tw = W / TABS.length;
-        for (int i = 0; i < TABS.length; i++) {
-            int tx = px + i * tw;
-            boolean sel = i == tab;
-            boolean over = mx >= tx && mx < tx + tw && my >= ty && my < ty + TAB_H;
-            if (over) g.fill(tx, ty, tx + tw, ty + TAB_H, 0x22FFFFFF);
-            g.drawString(font, TABS[i], tx + (tw - font.width(TABS[i])) / 2, ty + 6, sel ? Theme.TEXT : Theme.TEXT_DIM);
-            if (sel) g.fill(tx + 6, ty + TAB_H - 2, tx + tw - 6, ty + TAB_H, accent);
+            g.fill(p.x, p.y, p.x + p.w, p.y + h, Theme.BG);
+            g.fill(p.x, p.y, p.x + p.w, p.y + HEADER_H, Theme.HEADER);
+            g.fill(p.x, p.y + HEADER_H - 1, p.x + p.w, p.y + HEADER_H, accent);
+            g.drawString(font, p.title, p.x + 8, p.y + 5, Theme.TEXT);
+            g.drawString(font, p.collapsed() ? ">" : "v", p.x + p.w - 14, p.y + 5, Theme.TEXT_DIM);
+
+            if (!p.collapsed()) drawChildren(g, p.rows, p.x, p.y + HEADER_H + 2, p.w, mx, my);
         }
 
-        // rows
-        String hoverDesc = "";
-        int y = ty + TAB_H + 2;
-        for (Row r : rows) {
-            boolean over = mx >= px && mx < px + W && my >= y && my < y + r.height();
-            if (over) hoverDesc = r.desc;
-            r.draw(g, px, y, W, over);
-            y += r.height();
+        // hint line at the bottom of the screen
+        String hint = null;
+        for (int i = panels.size() - 1; i >= 0; i--) {
+            Panel p = panels.get(i);
+            if (mx < p.x || mx >= p.x + p.w || my < p.y || my >= p.y + p.height()) continue;
+            if (my < p.y + HEADER_H) hint = "Click to open/close, drag to move";
+            else if (!p.collapsed()) hint = describeChildren(p.rows, mx, my, p.x, p.y + HEADER_H + 2, p.w);
+            break;
         }
-
-        String footer = hoverDesc.isEmpty() ? "Esc to close" : hoverDesc;
-        g.drawString(font, font.plainSubstrByWidth(footer, W - 16), px + 8, py + h - FOOTER_H + 6, Theme.TEXT_DIM);
+        String text = hint == null || hint.isEmpty() ? "Esc to close" : hint;
+        g.drawString(font, text, (width - font.width(text)) / 2, height - 14, Theme.TEXT_DIM);
     }
 
-    // ------------------------------------------------------------ input
+    // ================================================================ input
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         double mx = event.x(), my = event.y();
-        nameBox.setFocused(false);
+        int button = event.button();
+        for (EditBox b : boxes) b.setFocused(false);
 
-        if (event.button() == 0 && mx >= px && mx < px + W) {
-            if (my >= py && my < py + HEADER_H) {
-                dragging = true;
-                dragOffX = (int) mx - px;
-                dragOffY = (int) my - py;
-                return true;
-            }
-            int ty = py + HEADER_H;
-            if (my >= ty && my < ty + TAB_H) {
-                tab = Mth.clamp((int) ((mx - px) / (W / TABS.length)), 0, TABS.length - 1);
-                return true;
-            }
-            int y = ty + TAB_H + 2;
-            for (Row r : pages.get(tab)) {
-                if (my >= y && my < y + r.height()) {
-                    if (r.press(mx, px, W)) {
-                        if (r.isSlider()) activeSlider = r;
-                        return true;
-                    }
-                    break;
+        for (int i = panels.size() - 1; i >= 0; i--) {
+            Panel p = panels.get(i);
+            if (mx < p.x || mx >= p.x + p.w || my < p.y || my >= p.y + p.height()) continue;
+
+            if (my < p.y + HEADER_H) {
+                if (button == 0) {
+                    dragPanel = p;
+                    dragOffX = (int) mx - p.x;
+                    dragOffY = (int) my - p.y;
+                    pressX = (int) mx;
+                    pressY = (int) my;
+                    dragMoved = false;
                 }
-                y += r.height();
+                return true;
             }
+            if (!p.collapsed()) {
+                Row r = pressChildren(p.rows, mx, my, button, p.x, p.y + HEADER_H + 2, p.w);
+                if (r != null) {
+                    if (r.isSlider()) activeSlider = r;
+                    return true;
+                }
+            }
+            break; // clicked inside a panel on something that doesn't consume it (a text box)
         }
         return super.mouseClicked(event, doubleClick);
     }
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
-        if (dragging) {
-            px = (int) event.x() - dragOffX;
-            py = (int) event.y() - dragOffY;
+        if (dragPanel != null) {
+            int nx = (int) event.x(), ny = (int) event.y();
+            if (Math.abs(nx - pressX) > 3 || Math.abs(ny - pressY) > 3) dragMoved = true;
+            if (dragMoved) {
+                dragPanel.x = nx - dragOffX;
+                dragPanel.y = ny - dragOffY;
+                POS.put(dragPanel.title, new int[]{dragPanel.x, dragPanel.y});
+            }
             return true;
         }
         if (activeSlider != null) {
-            activeSlider.drag(event.x(), px, W);
+            activeSlider.drag(event.x());
             return true;
         }
         return super.mouseDragged(event, dx, dy);
@@ -352,7 +665,10 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
-        dragging = false;
+        if (dragPanel != null && !dragMoved) {
+            if (!COLLAPSED.remove(dragPanel.title)) COLLAPSED.add(dragPanel.title);
+        }
+        dragPanel = null;
         activeSlider = null;
         return super.mouseReleased(event);
     }
