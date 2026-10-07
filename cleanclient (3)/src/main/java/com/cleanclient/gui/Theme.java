@@ -60,6 +60,12 @@ public final class Theme {
         }
     }
 
+    /** Always-rainbow color (independent of the HUD color mode). */
+    public static int rainbow(float offset) {
+        double t = (System.currentTimeMillis() % 3_600_000L) / 1000.0;
+        return hsv((float) (((t * 0.2 + offset) % 1.0 + 1.0) % 1.0), 0.7f, 1f);
+    }
+
     private static int clamp255(int v) { return Math.max(0, Math.min(255, v)); }
 
     private static int hsv(float h, float s, float v) {

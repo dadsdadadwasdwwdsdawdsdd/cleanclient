@@ -9,6 +9,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -37,13 +38,26 @@ public class Hud {
             ClientPacketListener conn = mc.getConnection();
             PlayerInfo info = conn == null ? null : conn.getPlayerInfo(mc.player.getUUID());
             if (info != null) leftY = infoLine(g, font, "Ping", info.getLatency() + " ms", leftY);
+            leftY = infoLine(g, font, "Facing", mc.player.getDirection().getName(), leftY);
+            double speed = Math.hypot(mc.player.getX() - mc.player.xo, mc.player.getZ() - mc.player.zo) * 20.0;
+            leftY = infoLine(g, font, "Speed", String.format("%.1f b/s", speed), leftY);
+            int cur = 0, max = 0;
+            for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET}) {
+                ItemStack a = mc.player.getItemBySlot(slot);
+                if (a.isDamageableItem()) {
+                    max += a.getMaxDamage();
+                    cur += a.getMaxDamage() - a.getDamageValue();
+                }
+            }
+            if (max > 0) leftY = infoLine(g, font, "Armor", (cur * 100 / max) + "%", leftY);
             leftY += 4;
         }
 
         if (ModuleManager.STASH_FINDER.isEnabled()) {
             leftY = infoLine(g, font, "Stash Finder", ModuleManager.STASH_FINDER.count() + " suspect chunk(s)", leftY);
+            int li = 0;
             for (String line : ModuleManager.STASH_FINDER.lines()) {
-                g.drawString(font, "  " + line, 6, leftY, Theme.TEXT_DIM);
+                g.drawString(font, "  " + line, 6, leftY, Theme.rainbow(li++ * 0.09f));
                 leftY += 11;
             }
             leftY += 4;

@@ -102,13 +102,16 @@ public class ClickGuiScreen extends Screen {
         List<Row> visuals = List.of(
                 new ModuleRow(ModuleManager.CHEST_ESP, "Highlights chests, barrels, shulkers", List.of(
                         new SliderRow("Opacity", "Box transparency", 0.1, 0.8,
-                                () -> Config.d.espAlpha, v -> Config.d.espAlpha = (float) v, "%.2f")
+                                () -> Config.d.espAlpha, v -> Config.d.espAlpha = (float) v, "%.2f"),
+                        new ToggleRow("Underground only", "Ignore chests above ground",
+                                () -> Config.d.espUndergroundOnly, v -> Config.d.espUndergroundOnly = v)
                 )),
                 new ModuleRow(ModuleManager.FREECAM, "Fly the camera, player stays put", List.of(
                         new SliderRow("Speed", "Blocks per second (Ctrl = x2)", 4, 40,
                                 () -> Config.d.freecamSpeed, v -> Config.d.freecamSpeed = (float) v, "%.0f b/s"),
                         new InfoRow(() -> "Hold " + CleanClient.aimPlayer.getTranslatedKeyMessage().getString() + ": aim player")
-                ))
+                )),
+                new ModuleRow(ModuleManager.FULLBRIGHT, "See everything, even in the dark", List.of())
         );
 
         // ---------------- World
@@ -118,6 +121,12 @@ public class ClickGuiScreen extends Screen {
                                 () -> Config.d.stashThreshold, v -> Config.d.stashThreshold = (int) Math.round(v), "%.0f"),
                         new SliderRow("Scan radius", "Chunks to scan (only loaded ones exist)", 4, 32,
                                 () -> Config.d.stashRadius, v -> Config.d.stashRadius = (int) Math.round(v), "%.0f"),
+                        new SliderRow("Min depth", "Containers must be this far under the surface", 2, 30,
+                                () -> Config.d.stashMinDepth, v -> Config.d.stashMinDepth = (int) Math.round(v), "%.0f"),
+                        new SliderRow("Odd blocks", "Man-made blocks below Y 0 needed to flag", 2, 30,
+                                () -> Config.d.stashDeepThreshold, v -> Config.d.stashDeepThreshold = (int) Math.round(v), "%.0f"),
+                        new SliderRow("Forget beyond", "Drop chunks further than this (0 = never)", 0, 500,
+                                () -> Config.d.stashForgetDist, v -> Config.d.stashForgetDist = (int) Math.round(v), "%.0f m"),
                         new ToggleRow("Remember", "Keep flagged chunks after they unload",
                                 () -> Config.d.stashRemember, v -> Config.d.stashRemember = v),
                         new ButtonRow("Clear remembered", "Forget every saved suspect chunk",
@@ -126,7 +135,27 @@ public class ClickGuiScreen extends Screen {
                 new ModuleRow(ModuleManager.AUTO_LEAVE, "Disconnect below a chosen Y level", List.of(
                         new SliderRow("Leave below Y", "Disconnect when you drop under this", -64, 64,
                                 () -> Config.d.autoLeaveY, v -> Config.d.autoLeaveY = (int) Math.round(v), "%.0f")
+                )),
+                new ModuleRow(ModuleManager.AUTO_MINER, "Tunnels forward, down or in stairs", List.of(
+                        new CycleRow("Mode", "Forward, Down or Staircase",
+                                () -> com.cleanclient.module.AutoMiner.MODES[Math.floorMod(Config.d.mineMode, com.cleanclient.module.AutoMiner.MODES.length)],
+                                () -> Config.d.mineMode = (Config.d.mineMode + 1) % com.cleanclient.module.AutoMiner.MODES.length),
+                        new SliderRow("Stop at Y", "Down/Staircase stop at this height", -64, 64,
+                                () -> Config.d.mineStopY, v -> Config.d.mineStopY = (int) Math.round(v), "%.0f"),
+                        new SliderRow("Min health", "Stops when health drops below this", 2, 20,
+                                () -> Config.d.mineMinHealth, v -> Config.d.mineMinHealth = (int) Math.round(v), "%.0f"),
+                        new ToggleRow("Stop near players", "Stops if a player is within 20 blocks",
+                                () -> Config.d.mineStopNearPlayer, v -> Config.d.mineStopNearPlayer = v)
                 ))
+        );
+
+        // ---------------- Player
+        List<Row> player = List.of(
+                new ModuleRow(ModuleManager.AUTO_TOOL, "Picks the best tool for the block", List.of(
+                        new ToggleRow("Switch back", "Return to your slot when you stop mining",
+                                () -> Config.d.autoToolSwitchBack, v -> Config.d.autoToolSwitchBack = v)
+                )),
+                new ModuleRow(ModuleManager.AUTO_SPRINT, "Sprint whenever you walk forward", List.of())
         );
 
         // ---------------- Macros
@@ -154,8 +183,12 @@ public class ClickGuiScreen extends Screen {
                         new CycleRow("Style", "Look of the module list",
                                 () -> Theme.STYLES[Math.floorMod(Config.d.hudStyle, Theme.STYLES.length)],
                                 () -> Config.d.hudStyle = (Config.d.hudStyle + 1) % Theme.STYLES.length),
-                        new ToggleRow("Info widgets", "XYZ, totems, crystals, ping",
+                        new ToggleRow("Info widgets", "XYZ, totems, ping, speed, armor...",
                                 () -> Config.d.hudInfo, v -> Config.d.hudInfo = v),
+                        new ToggleRow("Cyber loading", "Animated city on the loading screen",
+                                () -> Config.d.cyberLoading, v -> Config.d.cyberLoading = v),
+                        new ToggleRow("Cyber title", "Animated city on the main menu",
+                                () -> Config.d.cyberTitle, v -> Config.d.cyberTitle = v),
                         new SliderRow("Opacity", "Background of the module list", 0.1, 1.0,
                                 () -> Config.d.hudOpacity, v -> Config.d.hudOpacity = (float) v, "%.2f"),
                         new SliderRow("Y offset", "Move the module list up/down", -40, 100,
@@ -198,18 +231,23 @@ public class ClickGuiScreen extends Screen {
 
         panels.add(new Panel("Visuals", 142, visuals));
         panels.add(new Panel("World", 142, world));
+        panels.add(new Panel("Player", 142, player));
         panels.add(new Panel("Macros", 170, macros));
         panels.add(new Panel("HUD", 142, hud));
 
-        int nextX = 12;
+        int nextX = 12, rowY = TOP;
         for (Panel p : panels) {
             int[] saved = POS.get(p.title);
             if (saved != null) {
                 p.x = saved[0];
                 p.y = saved[1];
             } else {
+                if (nextX > 12 && nextX + p.w > width - 8) {
+                    nextX = 12;
+                    rowY += 150;
+                }
                 p.x = nextX;
-                p.y = TOP;
+                p.y = rowY;
                 POS.put(p.title, new int[]{p.x, p.y});
             }
             nextX += p.w + GAP;
@@ -537,6 +575,9 @@ public class ClickGuiScreen extends Screen {
 
             background(g, x, y, w, ROW_H);
             g.drawString(font, label, x + 8, y + 7, Theme.lerpColor(Theme.TEXT_DIM, Theme.TEXT, Math.max(anim, hv)));
+            if (anim > 0.02f) {
+                g.fill(x + 2, y + 3, x + 4, y + ROW_H - 3, ((int) (anim * 255) << 24) | (Theme.accent() & 0xFFFFFF));
+            }
             if (!children.isEmpty()) g.drawString(font, open() ? "v" : ">", x + w - 42, y + 7, Theme.TEXT_DIM);
             pill(g, x, y, w, anim);
 
@@ -587,10 +628,40 @@ public class ClickGuiScreen extends Screen {
             p.y = Mth.clamp(p.y, 0, Math.max(0, height - HEADER_H));
             int h = p.height();
 
+            // soft shadow
+            g.fill(p.x + 3, p.y + 3, p.x + p.w + 3, p.y + h + 3, 0x30000000);
+            g.fill(p.x + 1, p.y + 1, p.x + p.w + 1, p.y + h + 1, 0x30000000);
+            // body + faint outline in the accent color
             g.fill(p.x, p.y, p.x + p.w, p.y + h, Theme.BG);
-            g.fill(p.x, p.y, p.x + p.w, p.y + HEADER_H, Theme.HEADER);
-            g.fill(p.x, p.y + HEADER_H - 1, p.x + p.w, p.y + HEADER_H, accent);
+            int edge = (0x44 << 24) | (accent & 0xFFFFFF);
+            g.fill(p.x, p.y, p.x + p.w, p.y + 1, edge);
+            g.fill(p.x, p.y + h - 1, p.x + p.w, p.y + h, edge);
+            g.fill(p.x, p.y, p.x + 1, p.y + h, edge);
+            g.fill(p.x + p.w - 1, p.y, p.x + p.w, p.y + h, edge);
+            // header: slight vertical gradient + animated accent line
+            for (int band = 0; band < 3; band++) {
+                g.fill(p.x + 1, p.y + band * 6, p.x + p.w - 1, p.y + (band + 1) * 6,
+                        Theme.lerpColor(0xFF22222C, Theme.HEADER, band / 2f));
+            }
+            int seg = Math.max(1, p.w / 8);
+            for (int sx = 0; sx < p.w; sx += seg) {
+                g.fill(p.x + sx, p.y + HEADER_H - 2, Math.min(p.x + sx + seg, p.x + p.w), p.y + HEADER_H,
+                        Theme.dynamic(sx / (float) p.w * 0.6f));
+            }
             g.drawString(font, p.title, p.x + 8, p.y + 5, Theme.TEXT);
+
+            int on = 0, total = 0;
+            for (Row r : p.rows) {
+                if (r instanceof ModuleRow mr) {
+                    total++;
+                    if (mr.module.isEnabled()) on++;
+                }
+            }
+            if (total > 0) {
+                String badge = on + "/" + total;
+                g.drawString(font, badge, p.x + p.w - 22 - font.width(badge), p.y + 5,
+                        on > 0 ? accent : Theme.TEXT_DIM);
+            }
             g.drawString(font, p.collapsed() ? ">" : "v", p.x + p.w - 14, p.y + 5, Theme.TEXT_DIM);
 
             if (!p.collapsed()) drawChildren(g, p.rows, p.x, p.y + HEADER_H + 2, p.w, mx, my);
@@ -606,7 +677,9 @@ public class ClickGuiScreen extends Screen {
             break;
         }
         String text = hint == null || hint.isEmpty() ? "Esc to close" : hint;
-        g.drawString(font, text, (width - font.width(text)) / 2, height - 14, Theme.TEXT_DIM);
+        g.fill(0, height - 20, width, height, 0x88000000);
+        g.fill(0, height - 20, width, height - 19, (0x66 << 24) | (accent & 0xFFFFFF));
+        g.drawString(font, text, (width - font.width(text)) / 2, height - 13, Theme.TEXT_DIM);
     }
 
     // ================================================================ input

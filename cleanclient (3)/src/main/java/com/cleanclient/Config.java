@@ -36,8 +36,19 @@ public class Config {
         public int stashThreshold = 8;
         public int stashRadius = 16;
         public boolean stashRemember = true;
+        public int stashMinDepth = 6;          // containers must be this far below the surface
+        public int stashDeepThreshold = 5;     // odd blocks below Y 0 needed to flag a chunk
+        public int stashForgetDist = 50;       // forget flagged chunks further than this (0 = never)
+        public boolean espUndergroundOnly = false;
+        public boolean cyberLoading = true;
+        public boolean cyberTitle = true;
+        public boolean autoToolSwitchBack = true;
         public float freecamSpeed = 12f;
         public int autoLeaveY = 0;
+        public int mineMode = 0;            // 0 Forward, 1 Down, 2 Staircase
+        public int mineStopY = -48;
+        public int mineMinHealth = 10;
+        public boolean mineStopNearPlayer = true;
         // Macros
         public String[] macros = new String[]{"", "", "", "", "", ""};
         public int macroDelayTicks = 12;

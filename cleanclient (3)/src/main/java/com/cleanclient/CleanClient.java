@@ -12,6 +12,12 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.fabricmc.fabric.api.client.screen.v1.Screens;
+import com.cleanclient.gui.CyberCity;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.resources.Identifier;
 
@@ -56,6 +62,22 @@ public class CleanClient implements ClientModInitializer {
         HudElementRegistry.replaceElement(VanillaHudElements.SCOREBOARD, original -> (g, tracker) -> {
             if (Sidebar.active()) Sidebar.render(g, tracker);
             else original.render(g, tracker);
+        });
+
+        // Cyber city behind the main menu: draw it over the vanilla background, then redraw the buttons on top
+        ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
+            if (!(screen instanceof TitleScreen)) return;
+            ScreenEvents.afterRender(screen).register((s, g, mouseX, mouseY, tickDelta) -> {
+                if (!Config.d.cyberTitle) return;
+                CyberCity.draw(g, s.width, s.height, false);
+                for (AbstractWidget button : Screens.getButtons(s)) {
+                    button.render(g, mouseX, mouseY, tickDelta);
+                }
+                var font = Minecraft.getInstance().font;
+                g.drawString(font, "Minecraft 1.21.11  -  CleanClient", 4, s.height - 12, 0xAAFFFFFF);
+                String c = "Copyright Mojang AB. Do not distribute!";
+                g.drawString(font, c, s.width - font.width(c) - 4, s.height - 12, 0x88FFFFFF);
+            });
         });
 
         // Never leave freecam on across worlds/servers

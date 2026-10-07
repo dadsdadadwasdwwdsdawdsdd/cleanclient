@@ -12,6 +12,10 @@ public class ModuleManager {
     public static final Freecam FREECAM = new Freecam();
     public static final StashFinder STASH_FINDER = new StashFinder();
     public static final AutoLeave AUTO_LEAVE = new AutoLeave();
+    public static final AutoMiner AUTO_MINER = new AutoMiner();
+    public static final Fullbright FULLBRIGHT = new Fullbright();
+    public static final AutoTool AUTO_TOOL = new AutoTool();
+    public static final AutoSprint AUTO_SPRINT = new AutoSprint();
 
     private static final List<Module> MODULES = new ArrayList<>();
 
@@ -20,6 +24,10 @@ public class ModuleManager {
         MODULES.add(FREECAM);
         MODULES.add(STASH_FINDER);
         MODULES.add(AUTO_LEAVE);
+        MODULES.add(AUTO_MINER);
+        MODULES.add(FULLBRIGHT);
+        MODULES.add(AUTO_TOOL);
+        MODULES.add(AUTO_SPRINT);
     }
 
     public static List<Module> all() { return Collections.unmodifiableList(MODULES); }

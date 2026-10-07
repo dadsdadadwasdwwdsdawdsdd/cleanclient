@@ -41,6 +41,10 @@ public class ChestEsp extends Module {
                     float[] rgb = colorFor(be);
                     if (rgb == null) continue;
                     BlockPos p = be.getBlockPos();
+                    if (Config.d.espUndergroundOnly
+                            && p.getY() >= level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, p.getX(), p.getZ()) - Config.d.stashMinDepth) {
+                        continue;
+                    }
                     EspRenderer.box(
                             p.getX() + 0.04f, p.getY() + 0.0f, p.getZ() + 0.04f,
                             p.getX() + 0.96f, p.getY() + 0.92f, p.getZ() + 0.96f,

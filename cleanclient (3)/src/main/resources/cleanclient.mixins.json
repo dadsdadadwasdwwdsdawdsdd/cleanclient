@@ -3,6 +3,6 @@
   "minVersion": "0.8",
   "package": "com.cleanclient.mixin",
   "compatibilityLevel": "JAVA_21",
-  "client": ["EntityMixin", "GameRendererMixin"],
+  "client": ["EntityMixin", "GameRendererMixin", "LoadingOverlayMixin"],
   "injectors": { "defaultRequire": 1 }
 }
