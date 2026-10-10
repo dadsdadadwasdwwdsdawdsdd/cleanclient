@@ -1,9 +1,13 @@
-# CleanClient (draft) - Minecraft 1.21.11, Fabric
+# Block Outlines (Meteor addon)
 
-Dropdown GUI (Right Shift): Visuals (Chest ESP, Freecam, Fullbright), World (Stash Finder, Auto Leave, Auto Miner),
-Player (Auto Tool, Auto Sprint), Macros, HUD (layout, colors/patterns, sidebar, name spoof, cyber loading screen).
-Left-click a module to toggle it, right-click it for settings. Click a panel header to open/close, drag to move.
+Module `block-outlines` (Render): smooth coloured outline on the targeted block; when it breaks, a black/white SVG icon pops and spins.
 
-Stash Finder: Overworld, underground only. Rainbow chunk volumes, forgets chunks beyond 50 blocks (adjustable).
-Freecam (H): mining uses your real player; hold Left Alt to aim it. Macros: bind keys in Options > Controls.
-Settings: config/cleanclient.json
+Settings (group Render): color, alpha (0.1-1), smooth, speed (2-30).
+
+Build: JDK 21, `./gradlew build` -> `build/libs/`. Replace `src/main/resources/assets/blockoutlines/icon.svg` to change the icon (supports `<polygon points fill>` and `<rect>`; fill brighter than grey = white, otherwise black).
+
+## Cosmetics category
+- `wings` - animated feathered wings (Angel / Demon / Energy / Custom); flap on jump/fall, spread when gliding, fold when crouching.
+- `china-hat` - glowing cone hat that follows your head (Rainbow / Gradient / Solid).
+- `animated-sky` - flowing sky colors via Meteor's Ambience (your Ambience settings are restored when turned off).
+- `pets` - bee, turtle and allay that follow you. Client side only.

@@ -1,16 +1,33 @@
 {
   "schemaVersion": 1,
-  "id": "cleanclient",
+  "id": "block-outlines-addon",
   "version": "${version}",
-  "name": "CleanClient",
-  "description": "Chest ESP, Freecam, Stash Finder and a clean customizable UI.",
+  "name": "Better Render",
+  "description": "Meteor addon: smooth block outline, spinning icon and break ESP.",
+  "authors": [
+    "Just_Lukipuh"
+  ],
+  "icon": "assets/blockoutlines/icon.png",
   "environment": "client",
-  "entrypoints": { "client": ["com.cleanclient.CleanClient"] },
-  "mixins": ["cleanclient.mixins.json"],
+  "entrypoints": {
+    "meteor": [
+      "com.blockoutlines.addon.BlockOutlinesAddon"
+    ]
+  },
+  "mixins": [
+    "block-outlines.mixins.json"
+  ],
+  "custom": {
+    "meteor-client:color": "40,40,40",
+    "modmenu": {
+      "parent": {
+        "id": "meteor-client"
+      }
+    }
+  },
   "depends": {
-    "fabricloader": ">=0.18.1",
-    "minecraft": "~1.21.11",
     "java": ">=21",
-    "fabric-api": "*"
+    "minecraft": ["${mc_version}"],
+    "meteor-client": "*"
   }
 }
